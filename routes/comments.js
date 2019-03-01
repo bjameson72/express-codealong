@@ -1,19 +1,35 @@
 const express = require("express");
 const shortId = require("shortid");
 const moments = require("moment");
+const lowdb = require("lowdb");
+const FileSync = require("lowdb/adapters/FileSync");
 const commentData = require("../data");
+
+// create db file if it doesn't exist
+// and seed it with data
+const adapter = new FileSync("db.json", {
+  defaultValue: {
+    comments: commentData,
+  },
+});
+
+const db = lowdb(adapter);
 
 const router = express.Router();
 
 // routing
 // get all comments
 router.get("/", (req, res) => {
-  res.json(commentData);
+  const comments = db.get("comments").value();
+  res.json(comments);
 });
 
 // get single comment
 router.get("/:id", (req, res) => {
-  const myComment = commentData.find(comment => comment.id === parseInt(req.params.id));
+  const myComment = db
+    .get("comments")
+    .find({ id: req.params.id })
+    .value();
   if (myComment) {
     res.json(myComment);
   } else {
@@ -39,43 +55,62 @@ router.post("/", (req, res) => {
   };
 
   //   add to comment data
-  commentData.push(newComment);
+  // commentData.push(newComment);
+  db.get("comments")
+    .push(newComment)
+    .write();
 
   // return all comments, make sure new comment included
 
   // BONUS: if request has no body text or text empty, send proper error code and message
-  res.status(201).json({ msg: "Comment successfully added", comments: commentData });
+  res.status(201).json({
+    msg: "Comment successfully added",
+    comments: db.get("comments").value(),
+  });
 });
 
 router.put("/:id", (req, res) => {
   if (!req.body.text) {
-    res.status(400).json({
+    return res.status(400).json({
       msg: "Invalid syntax: please provide comment text",
     });
   }
 
-  const myComment = commentData.find(comment => comment.id === parseInt(req.params.id));
-
-  if (myComment) {
-    const newComment = {
-      text: req.body.text,
-      id: parseInt(req.params.id),
-      timestamp: moments().format(),
-    };
-    const indexComment = commentData.indexOf(myComment);
-    commentData.splice(indexComment, 1, newComment);
-    res.json(commentData);
-  } else {
-    res.status(404).json({ msg: "Invalid ID" });
+  if (
+    !db
+      .get("comments")
+      .find({ id: req.params.id })
+      .value()
+  ) {
+    return res.status(404).json({ msg: "Invalid ID" });
   }
+
+  db.get("comments")
+    .find({ id: req.params.id })
+    .assign({ text: req.body.text })
+    .write();
+
+  return res.json(db.get("comments").value());
 });
 
 router.delete("/:id", (req, res) => {
-  const myComment = commentData.find(comment => comment.id === parseInt(req.params.id));
-  const indexComment = commentData.indexOf(myComment);
-  commentData.splice(indexComment, 1);
-  // console.log(commentData);
-  res.json(commentData);
+  if (
+    !db
+      .get("comments")
+      .find({ id: req.params.id })
+      .value()
+  ) {
+    return res.status(404).json({ msg: "Invalid ID" });
+  }
+
+  db.get("comments")
+    .remove({ id: req.params.id })
+    .write();
+
+  res.status(200).json({
+    msg: "Comment Succesfully deleted",
+    comments: db.get("comments").value(),
+  });
 });
 
 module.exports = router;
